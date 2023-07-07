@@ -10,19 +10,53 @@ from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
 
 
 class SAModule(torch.nn.Module):
+    """
+    set abstraction module, torch.nn.Module = can contain trainable paramters and be optimized during training
+    """
     def __init__(self, ratio, r, nn):
+        """
+         nn = nr of output features
+        :param ratio:
+        :param r: radius within which we sample points
+        :param nn:
+        """
         super().__init__()
         self.ratio = ratio
         self.r = r
         self.conv = PointNetConv(nn, add_self_loops=False)
 
     def forward(self, x, pos, batch):
+        """
+        Computation module. Implements sampling, grouping and pointNet layer.
+        1. Partition set of points into (possibly) overlapping local regions (using centroids + radius)
+        2. Get local neighbourhoods' features for each centroid
+        2. Aggregating local neighbourhood using local pointNet layer (shared weights)
+        :param x: input features
+        :param pos: point position, shape (nr points, 3/xyz)
+        :param batch: list of batch indices for all points in the point clouds
+        :return:
+        """
+
+        # Sampling Layer
+        # sample centroids from the point cloud
+        # must take in shape [nr points, 3] -> 1D index vector
         idx = fps(pos, batch, ratio=self.ratio)
+        # Grouping Layer
+        # row, col are 1D arrays. If stacked, the columns of the new array represent pairs of points.
+        # These pairs of points could represent edges for points within radius r to their respective centroid.
         row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
                           max_num_neighbors=64)
         edge_index = torch.stack([col, row], dim=0)
-        x_dst = None if x is None else x[idx]
-        x = self.conv((x, x_dst), (pos, pos[idx]), edge_index)
+
+        # select features x of all centroids
+        centroids_features_x = None if x is None else x[idx]
+
+        # PointNet Layer
+        # get aggregated features by convolution operation on input features;
+        # PointNetConv applied to adjacency matrix and input features
+        x = self.conv((x, centroids_features_x), (pos, pos[idx]), edge_index)
+
+        # Set positions and batch indices to the subset of centroids for the next layer as input
         pos, batch = pos[idx], batch[idx]
         return x, pos, batch
 
@@ -85,22 +119,26 @@ def test(loader):
 
 
 if __name__ == '__main__':
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '..',
-                    'data/ModelNet10')
-    pre_transform, transform = T.NormalizeScale(), T.SamplePoints(128) #1024
+    # path = "/var/scratch/pmms2305/ModelNet10"
+    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..',
+    #                                 'data/ModelNet10')
+    path = "/var/scratch/pmms2305/ModelNet10"
+
+    print(path)
+    pre_transform, transform = T.NormalizeScale(), T.SamplePoints(256)  # 1024
     train_dataset = ModelNet(path, '10', True, transform, pre_transform)
     test_dataset = ModelNet(path, '10', False, transform, pre_transform)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,
-                              num_workers=4) # 6 workerse
+                              num_workers=4)  # 6 workers
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False,
-                             num_workers=4) # 6 workers
+                             num_workers=4)  # 6 workers
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    print("2")
-    for epoch in range(1, 10): # 201
-        print("epoch")
+    for epoch in range(1, 90):  # 201
         train(epoch)
         test_acc = test(test_loader)
-        print(f'Epoch: {epoch:03d}, Test: {test_acc:.4f}')
+        print(f'Epoch: {epoch}, Test: {test_acc}')
+
+    torch.save(model.state_dict(), 'model_fps.pt')

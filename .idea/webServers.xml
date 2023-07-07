@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="5b663551-fa65-4ca8-8db7-c32f0ea67bd6" name="das5">
+        <fileTransfer rootFolder="/home/pmms2305" accessType="SFTP" host="fs0.das5.cs.vu.nl" port="22" sshConfigId="e9c9a89b-01e5-49f0-9667-22954ce9cddf" sshConfig="pmms2305@fs0.das5.cs.vu.nl:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" isUseRsync="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
