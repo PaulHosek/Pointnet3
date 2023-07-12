@@ -23,7 +23,7 @@ def import_train(nr_points):
     return train_dataset
 
 
-def draw_pointcloud(point_cloud, coloring=None, elev=30, azim=340):
+def draw_pointcloud(point_cloud, coloring=None, elev=30, azim=340,colorbar=False):
     """
 
     :param point_cloud: torch.tensor. point_could.pos should be [nr_points,3]
@@ -46,7 +46,8 @@ def draw_pointcloud(point_cloud, coloring=None, elev=30, azim=340):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     ax.view_init(elev=elev, azim=azim)
-    plt.colorbar()
+    if colorbar:
+        plt.colorbar()
 
 def find_neighborhood(points_pos, query_point, radius):
     """
@@ -156,4 +157,8 @@ def visualize_plane(center_point, surrounding_points,point_cloud, radius, limit_
         ax.set_xlim([x_min, x_max])
         ax.set_ylim([y_min, y_max])
         ax.set_zlim([z_min, z_max])
+
+
+
+
 
