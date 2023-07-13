@@ -7,13 +7,13 @@ import torch_geometric.transforms as T
 from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
-
+import sampling_algs
 
 class SAModule(torch.nn.Module):
     """
     set abstraction module, torch.nn.Module = can contain trainable paramters and be optimized during training
     """
-    def __init__(self, ratio, r, nn):
+    def __init__(self, ratio, r, nn, z_score_bias, k):
         """
          nn = nr of output features
         :param ratio:
@@ -24,6 +24,8 @@ class SAModule(torch.nn.Module):
         self.ratio = ratio
         self.r = r
         self.conv = PointNetConv(nn, add_self_loops=False)
+        self.z_score_bias = z_score_bias
+        self.k = k
 
     def forward(self, x, pos, batch):
         """
@@ -41,6 +43,8 @@ class SAModule(torch.nn.Module):
         # sample centroids from the point cloud
         # must take in shape [nr points, 3] -> 1D index vector
         idx = fps(pos, batch, ratio=self.ratio)
+        idx = sampling_algs.by_curvature(pos, batch, ratio=self.ratio,k=self.k)
+        print(idx.shape)
         # Grouping Layer
         # row, col are 1D arrays. If stacked, the columns of the new array represent pairs of points.
         # These pairs of points could represent edges for points within radius r to their respective centroid.
@@ -77,10 +81,12 @@ class GlobalSAModule(torch.nn.Module):
 class Net(torch.nn.Module):
     def __init__(self):
         super().__init__()
+        k = 10
+        z_score_bias = 0
 
         # Input channels account for both `pos` and node features.
-        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]))
-        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
+        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), z_score_bias, k)
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), z_score_bias, k)
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.mlp = MLP([1024, 512, 256, 10], dropout=0.5, norm=None)
