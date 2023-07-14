@@ -6,7 +6,7 @@ Call: idx = fps(pos, batch, ratio=self.ratio)
 
 """
 
-from torch import Tensor, argsort
+import torch
 import torch_cluster
 
 from torch_geometric.typing import OptTensor
@@ -78,28 +78,79 @@ import math
 #
 #     return adjusted_indices
 
+def wrap_curve(x, batch, ratio, k):
+    if batch is not None:
+        assert x.size(0) == batch.numel()
+        batch_size = int(batch.max()) + 1
+
+        deg = x.new_zeros(batch_size, dtype=torch.long)
+        deg.scatter_add_(0, batch, torch.ones_like(batch))
+
+        ptr = deg.new_zeros(batch_size + 1)
+        torch.cumsum(deg, 0, out=ptr[1:])
+    else:
+        ptr = torch.tensor([0, x.size(0)], device=x.device)
+    return by_curvature(x, ptr, ratio, k)
+
 
 def by_curvature(x, batch, ratio,k):
+    # TODO, batch is 0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4...9,30,30,30,30,31,31,31,31 array
+    #  have it precomputed could use it for indexing and paralel compute later
     """
     Select the points based on descending curvature.
-    :param x:
-    :param batch:
+    :param x: [points_per_cloud * batchsize, 3]
+        Includes all point clouds of p points in all batches
+
+
+        E.g.,
+        4 points for each cloud
+        batch = 32: batchsize is 32 clouds per batch, so 4*32 points
+        x will then be all clouds in the batch [4*32, 3] tensor
+            - need to do FPS only within every 4 indices/ within each point cloud
+
+        Note that points per cloud can change since later layers pool earlier layers. so 4 may go to 2.
+         Look at batch for the information.
+    :param batch: 1D torch tensor that allocates the points in x to the right cloud
+                    e.g., 0,0,0,0,1,1,1,1,2,2,2,2,3,...9,30,30,30,30,31,31,31,31
     :param ratio:
     :param k:
     :return:
     """
+    k = 0 # FIXME must check if at least k+1 points are in the cloud
+    total_nr_points = batch.size(0)
+    unique_batch = torch.unique(batch)
+    num_point_clouds = unique_batch.numel()-1  # e.g., 32
+    nr_points_per_cloud = int(x.size(0) / num_point_clouds)
+    print("nr_points_per_cloud, x.size(0), num_point_clouds: ", nr_points_per_cloud, x.size(0), num_point_clouds)
 
-    desired_num_points = int(ratio * x.size(0))
+    # assert nr_points_per_cloud * num_point_clouds == total_nr_points, "Not all point clouds have the same nr of points."
 
-    knn_res = principal_curvature.k_nearest_neighbors(x, k)
-    curve_res = principal_curvature.principal_curvature(x, knn_res)
+    x_reshaped = x.view(num_point_clouds, nr_points_per_cloud, -1)  # [32, 40, 3])
 
-    return argsort(curve_res)[:desired_num_points]
+    # Iterate over the point clouds
+    desired_num_points = math.ceil(ratio * nr_points_per_cloud)
+    out = torch.empty(desired_num_points * num_point_clouds, dtype=torch.long)
+    for i in range(num_point_clouds):  # use enumerate
+
+        cloud = x_reshaped[i,:,:]
+        # compute
+        # knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
+        # curve_res = principal_curvature.principal_curvature(cloud, knn_res)
+        # curve_idx_reordered = torch.argsort(curve_res)[:desired_num_points]
+        # print("curve res, curve idx reordered", curve_res, curve_idx_reordered)
+
+        curve_idx_reordered = torch.arange(cloud.size(0))[:desired_num_points]  # dummy
+        # print("cloud shape", cloud.size(0))
+        # print("curve_idx_reordered.shape,curve_idx_reordered ,  desired_num_points", curve_idx_reordered.shape, curve_idx_reordered, desired_num_points)
+        ptr = i * desired_num_points
+        out[ptr:(i + 1) * desired_num_points] = curve_idx_reordered + ptr  # shift local point index by cloud index
+
+    return out
 
 
 
-def original_fps(x: Tensor, batch: OptTensor = None, ratio: float = 0.5,
-        random_start: bool = True) -> Tensor:
+def original_fps(x: torch.Tensor, batch: OptTensor = None, ratio: float = 0.5,
+        random_start: bool = True) -> torch.Tensor:
     r"""
     You start with a point cloud comprising N
     points and iteratively select a point until you have up to S

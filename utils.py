@@ -5,7 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
-def import_train(nr_points):
+def import_train(nr_points, train=True):
     """
     Import training dataset.
 
@@ -19,8 +19,9 @@ def import_train(nr_points):
 
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(nr_points)  # 1024
 
-    train_dataset = ModelNet(path, '10', True, transform, pre_transform)
+    train_dataset = ModelNet(path, '10', train, transform, pre_transform)
     return train_dataset
+
 
 
 def draw_pointcloud(point_cloud, coloring=None, elev=30, azim=340,colorbar=False):

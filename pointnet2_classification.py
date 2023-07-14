@@ -8,6 +8,9 @@ from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
 import sampling_algs
+import utils
+import numpy as np # only for testing
+
 
 class SAModule(torch.nn.Module):
     """
@@ -42,9 +45,13 @@ class SAModule(torch.nn.Module):
         # Sampling Layer
         # sample centroids from the point cloud
         # must take in shape [nr points, 3] -> 1D index vector
-        idx = fps(pos, batch, ratio=self.ratio)
-        idx = sampling_algs.by_curvature(pos, batch, ratio=self.ratio,k=self.k)
-        print(idx.shape)
+        # print(pos.shape,batch.shape,self.ratio)
+        # idx = fps(pos, batch, ratio=self.ratio)
+        # print("idx, pos ",idx.shape, pos.shape)
+        idx = sampling_algs.wrap_curve(pos, batch, ratio=self.ratio,k=self.k)
+        # with open('batch_arr.txt', 'a+') as f:
+        #     np.savetxt(f, [batch.numpy()],delimiter=",", fmt='%d')
+        # print("len(idx)",len(idx))
         # Grouping Layer
         # row, col are 1D arrays. If stacked, the columns of the new array represent pairs of points.
         # These pairs of points could represent edges for points within radius r to their respective centroid.
@@ -58,7 +65,8 @@ class SAModule(torch.nn.Module):
         # PointNet Layer
         # get aggregated features by convolution operation on input features;
         # PointNetConv applied to adjacency matrix and input features
-        x = self.conv((x, centroids_features_x), (pos, pos[idx]), edge_index)
+        print("pos[idx].shape", pos[idx].shape)
+        x = self.conv((x, centroids_features_x), (pos, pos[idx]), edge_index)  # FIXME pos[idx] gives problems here
 
         # Set positions and batch indices to the subset of centroids for the next layer as input
         pos, batch = pos[idx], batch[idx]
@@ -96,7 +104,7 @@ class Net(torch.nn.Module):
         sa1_out = self.sa1_module(*sa0_out)
         sa2_out = self.sa2_module(*sa1_out)
         sa3_out = self.sa3_module(*sa2_out)
-        x, pos, batch = sa3_out
+        x, pos, batch = sa3_out  # why is this here?
 
         return self.mlp(x).log_softmax(dim=-1)
 
@@ -125,15 +133,17 @@ def test(loader):
 
 
 if __name__ == '__main__':
-    # path = "/var/scratch/pmms2305/ModelNet10"
-    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..',
-    #                                 'data/ModelNet10')
-    path = "/var/scratch/pmms2305/ModelNet10"
 
-    print(path)
-    pre_transform, transform = T.NormalizeScale(), T.SamplePoints(256)  # 1024
-    train_dataset = ModelNet(path, '10', True, transform, pre_transform)
-    test_dataset = ModelNet(path, '10', False, transform, pre_transform)
+
+    path = "/var/scratch/pmms2305/ModelNet10"
+    # pre_transform, transform = T.NormalizeScale(), T.SamplePoints(256)  # 1024
+    # train_dataset = ModelNet(path, '10', True, transform, pre_transform)
+    # test_dataset = ModelNet(path, '10', False, transform, pre_transform)
+
+    train_dataset= utils.import_train(40, train=True)
+    test_dataset= utils.import_train(40, train=False)
+
+
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,
                               num_workers=4)  # 6 workers
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False,
