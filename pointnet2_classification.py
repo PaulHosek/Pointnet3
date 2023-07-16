@@ -49,6 +49,7 @@ class SAModule(torch.nn.Module):
         # idx = fps(pos, batch, ratio=self.ratio)
         # print("idx, pos ",idx.shape, pos.shape)
         idx = sampling_algs.wrap_curve(pos, batch, ratio=self.ratio,k=self.k)
+        # print("idx.shape, idx", idx.shape, idx)
         # with open('batch_arr.txt', 'a+') as f:
         #     np.savetxt(f, [batch.numpy()],delimiter=",", fmt='%d')
         # print("len(idx)",len(idx))

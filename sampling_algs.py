@@ -90,7 +90,7 @@ def wrap_curve(x, batch, ratio, k):
         torch.cumsum(deg, 0, out=ptr[1:])
     else:
         ptr = torch.tensor([0, x.size(0)], device=x.device)
-    return by_curvature(x, ptr, ratio, k)
+    return by_curvature(x, batch, ratio, k) # (x, ptr, ratio, k)
 
 
 def by_curvature(x, batch, ratio,k):
@@ -119,9 +119,9 @@ def by_curvature(x, batch, ratio,k):
     k = 0 # FIXME must check if at least k+1 points are in the cloud
     total_nr_points = batch.size(0)
     unique_batch = torch.unique(batch)
-    num_point_clouds = unique_batch.numel()-1  # e.g., 32
+    num_point_clouds = unique_batch[-1]+1  # e.g., 32
     nr_points_per_cloud = int(x.size(0) / num_point_clouds)
-    print("nr_points_per_cloud, x.size(0), num_point_clouds: ", nr_points_per_cloud, x.size(0), num_point_clouds)
+    # print("nr_points_per_cloud, x.size(0), num_point_clouds: ", nr_points_per_cloud, x.size(0), num_point_clouds)
 
     # assert nr_points_per_cloud * num_point_clouds == total_nr_points, "Not all point clouds have the same nr of points."
 
@@ -142,8 +142,8 @@ def by_curvature(x, batch, ratio,k):
         curve_idx_reordered = torch.arange(cloud.size(0))[:desired_num_points]  # dummy
         # print("cloud shape", cloud.size(0))
         # print("curve_idx_reordered.shape,curve_idx_reordered ,  desired_num_points", curve_idx_reordered.shape, curve_idx_reordered, desired_num_points)
-        ptr = i * desired_num_points
-        out[ptr:(i + 1) * desired_num_points] = curve_idx_reordered + ptr  # shift local point index by cloud index
+        ptr = i * nr_points_per_cloud # shift local point index by cloud index
+        out[i * desired_num_points:(i + 1) * desired_num_points] = curve_idx_reordered + ptr
 
     return out
 
