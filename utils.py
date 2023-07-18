@@ -5,7 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
-def import_train(nr_points, train=True):
+def import_train(nr_points, train=True,path=None):
     """
     Import training dataset.
 
@@ -14,7 +14,8 @@ def import_train(nr_points, train=True):
     :param nr_points:
     :return: torch tensor of training datapoints
     """
-    path = osp.join(osp.dirname(osp.realpath(__file__)), '..',
+    if path is None:
+        path = osp.join(osp.dirname(osp.realpath(__file__)), '..',
                                     'data/ModelNet10')
 
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(nr_points)  # 1024

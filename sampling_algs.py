@@ -1,9 +1,5 @@
 """
-Default call returns a 1D torch tensor of indices for the points in the sample.
-Could be that dim is higher if multiple batches.
-Call: idx = fps(pos, batch, ratio=self.ratio)
-
-
+Various sampling algorithms to sample points in point clouds for use in the PointNet++ sampling layer.
 """
 
 import torch
@@ -15,68 +11,80 @@ import scipy.stats as stats
 import math
 
 
-# def interpolate_with_distribution(distribution, z_score):
-#     # Calculate the left and right bounds based on the distribution
-#     # Calculate the bias based on the z-score
-#     # Perform linear interpolation
-#
-#
-#     left_quantile = quantile(distribution, 0.025)
-#     right_quantile = quantile(distribution, 0.975)
-#
-#     bias = stats.norm.cdf(z_score)
-#     result = left_quantile + (right_quantile - left_quantile) * bias
-#     return result
+def max_curve_sampler(cloud,desired_num_points, k):
+    """
+    Sample points with the highest curvature based on eigenvalues derived from their k-neighbourhood.
+
+    :param cloud: Tensor of shape (N, C) representing the point cloud data.
+    :param desired_num_points: Desired number of points to be sampled.
+    :param k: Number of nearest neighbors to consider for curvature computation.
+    :return: Tensor of shape (M,) containing the indices of the sampled points.
+    """
+    if cloud.size(0) < k:
+        k = cloud.size(0)
+
+    knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
+    curve_res = principal_curvature.principal_curvature(cloud, knn_res)
+    curve_idx_reordered = torch.argsort(curve_res)[:desired_num_points]
+    return curve_idx_reordered
 
 
+def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
+    """
+    Coordinate batch-wise point cloud sampling.
 
-# def principal_curvature_fps(x, batch, ratio, z_score_bias,k=5):
-#     """
-#     Sample more strongly from curved spaces.
-#     FPS but we reduce possible points that can be sampled based on the curvature.
-#     :param x:
-#     :param batch:
-#     :param ratio:
-#     :param z_score_bias:
-#     :param k:
-#     :return:
-#     """
-#
-#     knn_res = principal_curvature.k_nearest_neighbors(x, k)
-#     curve_res = principal_curvature.principal_curvature(x, knn_res)
-#
-#     # calculating the threshold based on the z-score
-#     # is likely expensive, we could also opt for a more simple min max bias
-#     # threshold = interpolate_with_distribution(curve_res, z_score_bias)
-#     # x = x[curve_res > threshold]
-#
-#     # fps wants ratio to return a certain ratio of the original x
-#     # now we need to ensure that this ratio is still intact after our bias
-#
-#     x_reduced = x[curve_res > mean(curve_res)]# !! would need to make sure that x_reduced is at least nr desired points long
-#
-#
-#     desired_num_points = int(ratio * x.size(0))
-#     print("here", desired_num_points)
-#     # Calculate the reduction factor based on the number of points in `y` and `x`
-#     # reduction_factor = float(x_reduced.size(0)) / float(x.size(0))
-#     # adjusted_ratio = math.ceil(ratio / reduction_factor, 2)
-#
-#     batch = batch[curve_res > mean(curve_res)]
-#     # print(batch)
-#     # print(batch.shape)
-#
-#     sampled_idx = torch_cluster.fps(x_reduced, batch, ratio=1.0)
-#     print("sampled_idx",sampled_idx)
-#     adjusted_indices = x_reduced[:desired_num_points]
-#     # adjusted_indices here are of x_reduced, but we need them to be indices from x selected out of x_reduced!
-#     print("batch shape", batch.shape)
-#     print("x shape", x_reduced.shape)
-#     print("len adj idx", len(adjusted_indices))
-#
-#
-#
-#     return adjusted_indices
+    :param x: Tensor of shape (N, C) representing the point cloud data.
+    :param batch: Tensor of shape (N,) representing the batch indices of the points.
+    :param ratio: Sampling ratio for each point cloud in the batch.
+    :param sampler: Sampling algorithm function to be used for sampling points in each point cloud.
+    :param sampler_args: Additional arguments to be passed to the sampler function.
+    :return: Tensor of shape (M,) containing the indices of the sampled points across the entire batch.
+
+    If `batch` is not None, it should be a tensor of batch indices for each point in `x`. The batch indices
+    help identify the point clouds in the batch. It is assumed that `x` and `batch` have compatible shapes,
+    with `x` having the same number of points as the length of `batch`.
+
+    The function operates on a batch of point clouds and coordinates the sampling process. It first checks if
+    `batch` is provided and performs necessary checks on the sizes and dimensions. It then reshapes `x` into
+    individual point clouds. For each point cloud, it calls the provided `sampler` function to sample the
+    desired number of points based on the specified `ratio`. The sampled point indices are adjusted to account
+    for the position of each point cloud in the batch, and the indices are stored in the output tensor `out`.
+
+    Note: The `sampler` function should take in a point cloud tensor, the desired nr of points, and any additional arguments
+    specified in `sampler_args`. It should return the indices of the sampled points within the given point
+    cloud.
+    """
+    if batch is not None:
+        assert x.size(0) == batch.numel()
+        batch_size = int(batch.max()) + 1
+
+        deg = x.new_zeros(batch_size, dtype=torch.long)
+        deg.scatter_add_(0, batch, torch.ones_like(batch))
+
+        ptr = deg.new_zeros(batch_size + 1)
+        torch.cumsum(deg, 0, out=ptr[1:])
+    else:
+        ptr = torch.tensor([0, x.size(0)], device=x.device)
+
+    unique_batch = torch.unique(batch)
+    num_point_clouds = unique_batch[-1] + 1  # e.g., 32
+    nr_points_per_cloud = int(x.size(0) / num_point_clouds)
+    x_reshaped = x.view(num_point_clouds, nr_points_per_cloud, -1)  # [32, 40, 3])
+
+    # Iterate over the point clouds
+    desired_num_points = math.ceil(ratio * nr_points_per_cloud)
+    out = torch.empty(desired_num_points * num_point_clouds, dtype=torch.long)
+    for i in range(num_point_clouds):  # use enumerate
+        cloud = x_reshaped[i, :, :]
+
+        # compute
+        curve_idx_reordered = sampler(cloud, desired_num_points, *sampler_args)
+
+        ptr = i * nr_points_per_cloud  # shift local point index by cloud index
+        out[i * desired_num_points:(i + 1) * desired_num_points] = curve_idx_reordered + ptr
+
+    return out
+
 
 def wrap_curve(x, batch, ratio, k):
     if batch is not None:
@@ -90,10 +98,10 @@ def wrap_curve(x, batch, ratio, k):
         torch.cumsum(deg, 0, out=ptr[1:])
     else:
         ptr = torch.tensor([0, x.size(0)], device=x.device)
-    return by_curvature(x, batch, ratio, k) # (x, ptr, ratio, k)
+    return by_curvature(x, batch, ratio, k)  # (x, ptr, ratio, k)
 
 
-def by_curvature(x, batch, ratio,k):
+def by_curvature(x, batch, ratio, k):
     # TODO, batch is 0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4...9,30,30,30,30,31,31,31,31 array
     #  have it precomputed could use it for indexing and paralel compute later
     """
@@ -116,41 +124,35 @@ def by_curvature(x, batch, ratio,k):
     :param k:
     :return:
     """
-    k = 0 # FIXME must check if at least k+1 points are in the cloud
-    total_nr_points = batch.size(0)
+
+    k = 10
     unique_batch = torch.unique(batch)
-    num_point_clouds = unique_batch[-1]+1  # e.g., 32
+    num_point_clouds = unique_batch[-1] + 1  # e.g., 32
     nr_points_per_cloud = int(x.size(0) / num_point_clouds)
-    # print("nr_points_per_cloud, x.size(0), num_point_clouds: ", nr_points_per_cloud, x.size(0), num_point_clouds)
-
-    # assert nr_points_per_cloud * num_point_clouds == total_nr_points, "Not all point clouds have the same nr of points."
-
     x_reshaped = x.view(num_point_clouds, nr_points_per_cloud, -1)  # [32, 40, 3])
 
     # Iterate over the point clouds
     desired_num_points = math.ceil(ratio * nr_points_per_cloud)
     out = torch.empty(desired_num_points * num_point_clouds, dtype=torch.long)
     for i in range(num_point_clouds):  # use enumerate
+        cloud = x_reshaped[i, :, :]
+        if cloud.size(0) < k:
+            k = cloud.size(0)
 
-        cloud = x_reshaped[i,:,:]
         # compute
-        # knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
-        # curve_res = principal_curvature.principal_curvature(cloud, knn_res)
-        # curve_idx_reordered = torch.argsort(curve_res)[:desired_num_points]
-        # print("curve res, curve idx reordered", curve_res, curve_idx_reordered)
+        knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
+        curve_res = principal_curvature.principal_curvature(cloud, knn_res)
+        curve_idx_reordered = torch.argsort(curve_res)[:desired_num_points]
 
-        curve_idx_reordered = torch.arange(cloud.size(0))[:desired_num_points]  # dummy
-        # print("cloud shape", cloud.size(0))
-        # print("curve_idx_reordered.shape,curve_idx_reordered ,  desired_num_points", curve_idx_reordered.shape, curve_idx_reordered, desired_num_points)
-        ptr = i * nr_points_per_cloud # shift local point index by cloud index
+
+        ptr = i * nr_points_per_cloud  # shift local point index by cloud index
         out[i * desired_num_points:(i + 1) * desired_num_points] = curve_idx_reordered + ptr
 
     return out
 
 
-
 def original_fps(x: torch.Tensor, batch: OptTensor = None, ratio: float = 0.5,
-        random_start: bool = True) -> torch.Tensor:
+                 random_start: bool = True) -> torch.Tensor:
     r"""
     You start with a point cloud comprising N
     points and iteratively select a point until you have up to S
