@@ -9,6 +9,7 @@ from torch_geometric.typing import OptTensor
 import principal_curvature
 import scipy.stats as stats
 import math
+import numpy as np
 
 
 def max_curve_sampler(cloud,desired_num_points, k):
@@ -27,6 +28,27 @@ def max_curve_sampler(cloud,desired_num_points, k):
     curve_res = principal_curvature.principal_curvature(cloud, knn_res)
     curve_idx_reordered = torch.argsort(curve_res)[:desired_num_points]
     return curve_idx_reordered
+
+
+def bias_curve_fps_sampler(cloud, desired_num_points,k, ratio, bias):
+    """Probability based. High bias = more curvature preference vs FPS"""
+    if cloud.size(0) < k:
+        k = cloud.size(0)
+
+    knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
+    curve_res = principal_curvature.principal_curvature(cloud, knn_res)
+    # TODO CHECK IF FPS WORKS IF WE PRETEND ITS ALL ONE BATCH
+    fps_res= torch_cluster.fps(cloud, torch.ones(size=cloud.shape(0)), ratio, False) # do iterative FPS on all points
+    nr_curved = math.ceil(desired_num_points*bias)
+
+    curve_idx_reordered = torch.argsort(curve_res)[:nr_curved]
+    # get the rest portion of the points from fps, but only select those we have not selected before
+    fps_idx_reordered = fps_res[~fps_res.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_curved]
+
+    return torch.cat([curve_idx_reordered,fps_idx_reordered], 1)
+
+
+
 
 
 def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
