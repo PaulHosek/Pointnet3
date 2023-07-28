@@ -31,20 +31,43 @@ def max_curve_sampler(cloud,desired_num_points, k):
 
 
 def bias_curve_fps_sampler(cloud, desired_num_points, k, bias, fps_idx):
-    """Probability based. High bias = more curvature preference vs FPS"""
-    if cloud.size(0) < k:
-        k = cloud.size(0)
+    """Probability based.
+     High bias = more curvature preference vs FPS
+    Get the rest portion of the points from fps, but only select those we have not selected before
+    """
 
-    knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
-    curve_res = principal_curvature.principal_curvature(cloud, knn_res)
     nr_curved = math.ceil(desired_num_points*bias)
-    curve_idx_reordered = torch.argsort(curve_res)[:nr_curved]
-    # get the rest portion of the points from fps, but only select those we have not selected before
+    curve_idx_reordered = max_curve_sampler(cloud, nr_curved,k)
     fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_curved]
+    return torch.cat([curve_idx_reordered, fps_idx_reordered], 0)
 
-    return torch.cat([curve_idx_reordered, fps_idx_reordered], 1)
+# def bias_any2_sampler(cloud, desired_num_points, bias, func1, func2, args1, args2):
+#     """
+#     Bias sampling between any 2 methods
+#     :param cloud:
+#     :param desired_num_points:
+#     :param func1:
+#     :param func2:
+#     :param args1:
+#     :param args2:
+#     :return:
+#     """
+#     nr_func1 = math.ceil(desired_num_points*bias)
+#     curve_idx_reordered = func1(cloud, nr_func1, args1)
+#
+#     fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_func1]
+#     return torch.cat([curve_idx_reordered, fps_idx_reordered], 0)
 
+def bias_anyvsfps_sampler(cloud, desired_num_points, k, bias, fps_idx, func1, args1):
+    """Probability based.
+     High bias = more curvature preference vs FPS
+    Get the rest portion of the points from fps, but only select those we have not selected before
+    """
 
+    nr_f1 = math.ceil(desired_num_points*bias)
+    curve_idx_reordered = func1(cloud, nr_f1, args1)
+    fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_f1]
+    return torch.cat([curve_idx_reordered, fps_idx_reordered], 0)
 
 
 
