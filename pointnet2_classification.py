@@ -47,11 +47,17 @@ class SAModule(torch.nn.Module):
         # sample centroids from the point cloud
         # must take in shape [nr points, 3] -> 1D index vector
 
-        # idx = fps(pos, batch, ratio=self.ratio)
+        idx = sampling_algs.original_fps(pos, batch, ratio=self.ratio)
         # idx = sampling_algs.wrap_curve(pos, batch, ratio=self.ratio, k=self.k)
-        sampler_args = [self.k]
-        sampler = sampling_algs.max_curve_sampler
-        idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args)
+        # sampler_args = [self.k]
+        # sampler = sampling_algs.max_curve_sampler
+        # print(self.ratio)
+        # print(self.ratio.shape)
+        # idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args)
+        print(batch.shape)
+        print(pos.shape)
+        print(idx)
+        raise KeyboardInterrupt
 
         # Grouping Layer
         # row, col are 1D arrays. If stacked, the columns of the new array represent pairs of points.
@@ -137,10 +143,10 @@ if __name__ == '__main__':
     # pre_transform, transform = T.NormalizeScale(), T.SamplePoints(256)  # 1024
     # train_dataset = ModelNet(path, '10', True, transform, pre_transform)
     # test_dataset = ModelNet(path, '10', False, transform, pre_transform)
-    model_name = "last_model_fps" # most curved, fps
+    model_name = "test" # most curved, fps
     folder = "fps"
-    train_dataset= utils.import_train(1024, train=True,path=path)
-    test_dataset= utils.import_train(1024, train=False,path=path)
+    train_dataset= utils.import_train(int(1024/16), train=True,path=path)
+    test_dataset= utils.import_train(int(1024/16), train=False,path=path)
 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,
                               num_workers=4)  # 6 workers
@@ -149,7 +155,7 @@ if __name__ == '__main__':
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net().to(device)
-    model.load_state_dict(torch.load(f"data/{folder}/{model_name}_model.pt"))
+    # model.load_state_dict(torch.load(f"data/{folder}/{model_name}_model.pt"))
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     #
     # with open("data/curve/2_1024_test_acc", "a+") as f:

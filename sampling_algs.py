@@ -26,26 +26,23 @@ def max_curve_sampler(cloud,desired_num_points, k):
 
     knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
     curve_res = principal_curvature.principal_curvature(cloud, knn_res)
-    curve_idx_reordered = torch.argsort(curve_res)[:desired_num_points]
+    curve_idx_reordered = torch.argsort(curve_res, descending=True)[:desired_num_points]
     return curve_idx_reordered
 
 
-def bias_curve_fps_sampler(cloud, desired_num_points,k, ratio, bias):
+def bias_curve_fps_sampler(cloud, desired_num_points, k, bias, fps_idx):
     """Probability based. High bias = more curvature preference vs FPS"""
     if cloud.size(0) < k:
         k = cloud.size(0)
 
     knn_res = principal_curvature.k_nearest_neighbors(cloud, k)
     curve_res = principal_curvature.principal_curvature(cloud, knn_res)
-    # TODO CHECK IF FPS WORKS IF WE PRETEND ITS ALL ONE BATCH
-    fps_res= torch_cluster.fps(cloud, torch.ones(size=cloud.shape(0)), ratio, False) # do iterative FPS on all points
     nr_curved = math.ceil(desired_num_points*bias)
-
     curve_idx_reordered = torch.argsort(curve_res)[:nr_curved]
     # get the rest portion of the points from fps, but only select those we have not selected before
-    fps_idx_reordered = fps_res[~fps_res.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_curved]
+    fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_curved]
 
-    return torch.cat([curve_idx_reordered,fps_idx_reordered], 1)
+    return torch.cat([curve_idx_reordered, fps_idx_reordered], 1)
 
 
 
@@ -87,7 +84,6 @@ def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
         torch.cumsum(deg, 0, out=ptr[1:])
     else:
         ptr = torch.tensor([0, x.size(0)], device=x.device)
-
     unique_batch = torch.unique(batch)
     num_point_clouds = unique_batch[-1] + 1  # e.g., 32
     nr_points_per_cloud = int(x.size(0) / num_point_clouds)
@@ -106,21 +102,6 @@ def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
         out[i * desired_num_points:(i + 1) * desired_num_points] = curve_idx_reordered + ptr
 
     return out
-
-
-def wrap_curve(x, batch, ratio, k):
-    if batch is not None:
-        assert x.size(0) == batch.numel()
-        batch_size = int(batch.max()) + 1
-
-        deg = x.new_zeros(batch_size, dtype=torch.long)
-        deg.scatter_add_(0, batch, torch.ones_like(batch))
-
-        ptr = deg.new_zeros(batch_size + 1)
-        torch.cumsum(deg, 0, out=ptr[1:])
-    else:
-        ptr = torch.tensor([0, x.size(0)], device=x.device)
-    return by_curvature(x, batch, ratio, k)  # (x, ptr, ratio, k)
 
 
 def by_curvature(x, batch, ratio, k):
@@ -146,8 +127,6 @@ def by_curvature(x, batch, ratio, k):
     :param k:
     :return:
     """
-
-    k = 10
     unique_batch = torch.unique(batch)
     num_point_clouds = unique_batch[-1] + 1  # e.g., 32
     nr_points_per_cloud = int(x.size(0) / num_point_clouds)
@@ -211,4 +190,26 @@ def original_fps(x: torch.Tensor, batch: OptTensor = None, ratio: float = 0.5,
 
     :rtype: :class:`torch.Tensor`
     """
-    return torch_cluster.fps(x, batch, ratio, random_start)
+    return torch_cluster.fps(x, batch, float(ratio), random_start)
+
+def wrap_curve_cpp(x, batch, ratio, k):
+    """
+    Only need this method if pass to C++.
+    :param x:
+    :param batch:
+    :param ratio:
+    :param k:
+    :return:
+    """
+    if batch is not None:
+        assert x.size(0) == batch.numel()
+        batch_size = int(batch.max()) + 1
+
+        deg = x.new_zeros(batch_size, dtype=torch.long)
+        deg.scatter_add_(0, batch, torch.ones_like(batch))
+
+        ptr = deg.new_zeros(batch_size + 1)
+        torch.cumsum(deg, 0, out=ptr[1:])
+    else:
+        ptr = torch.tensor([0, x.size(0)], device=x.device)
+    return by_curvature(x, ptr, ratio, k)  # (x, ptr, ratio, k)
