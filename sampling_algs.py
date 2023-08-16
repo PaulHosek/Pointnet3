@@ -2,14 +2,20 @@
 Various sampling algorithms to sample points in point clouds for use in the PointNet++ sampling layer.
 """
 
+# TODO: fps_idx is for multiple batches now, cannot just feed it to the bias sampler as is
+# TODO: if want general any2_bias function, both must take in desired_nr_points as 2nd arg
+
+
 import torch
-import torch_cluster
+
+import torch_geometric.nn
 
 from torch_geometric.typing import OptTensor
 import principal_curvature
 import scipy.stats as stats
 import math
 import numpy as np
+
 
 
 def max_curve_sampler(cloud,desired_num_points, k):
@@ -58,17 +64,33 @@ def bias_curve_fps_sampler(cloud, desired_num_points, k, bias, fps_idx):
 #     fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_func1]
 #     return torch.cat([curve_idx_reordered, fps_idx_reordered], 0)
 
-def bias_anyvsfps_sampler(cloud, desired_num_points, k, bias, fps_idx, func1, args1):
+def bias_anyvsfps_sampler(cloud, desired_num_points, bias, func1, args1):
     """Probability based.
      High bias = more curvature preference vs FPS
     Get the rest portion of the points from fps, but only select those we have not selected before
     """
+    if bias == 0:
+        return torch_geometric.nn.pool.fps(cloud, torch.zeros(cloud.size(0), device=cloud.device).long(), 1.0, False)[:desired_num_points]
+    if bias == 1:
+        return func1(cloud, desired_num_points, args1).to(cloud.device)
 
     nr_f1 = math.ceil(desired_num_points*bias)
-    curve_idx_reordered = func1(cloud, nr_f1, args1)
+    curve_idx_reordered = func1(cloud, nr_f1, args1).to(cloud.device)
+    fps_idx = torch_geometric.nn.pool.fps(cloud, torch.zeros(cloud.size(0), device=cloud.device).long(), 1.0, False)
     fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_f1]
     return torch.cat([curve_idx_reordered, fps_idx_reordered], 0)
 
+
+
+# def bias_any2_sampler(cloud, desired_num_points,bias, func1, args1, func2,args2):
+#     nr_f1 = math.ceil(desired_num_points*bias)
+#     curve_idx_reordered = func1(cloud, nr_f1, args1)
+#     fps_idx = func2(cloud, 1.0, args1)
+#     fps_idx_reordered = fps_idx[~fps_idx.unsqueeze(1).eq(curve_idx_reordered).any(1)][:desired_num_points-nr_f1]
+#     retu
+
+# def fps_sampler(cloud, desired_num_points):
+#     ratio = pass
 
 
 def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
@@ -175,7 +197,8 @@ def by_curvature(x, batch, ratio, k):
     return out
 
 
-def original_fps(x: torch.Tensor, batch: OptTensor = None, ratio: float = 0.5,
+
+def original_fps_old(x: torch.Tensor, batch: OptTensor = None, ratio: float = 0.5,
                  random_start: bool = True) -> torch.Tensor:
     r"""
     You start with a point cloud comprising N
@@ -214,6 +237,8 @@ def original_fps(x: torch.Tensor, batch: OptTensor = None, ratio: float = 0.5,
     :rtype: :class:`torch.Tensor`
     """
     return torch_cluster.fps(x, batch, float(ratio), random_start)
+
+
 
 def wrap_curve_cpp(x, batch, ratio, k):
     """

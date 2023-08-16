@@ -1,4 +1,6 @@
+import getopt
 import os.path as osp
+import sys
 
 import torch
 import torch.nn.functional as F
@@ -7,11 +9,12 @@ import torch_geometric.transforms as T
 from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
-from torch_cluster import radius as c_radius
 import sampling_algs
 import utils
-import numpy as np  # only for testing
 import time
+import csv
+
+
 
 class SAModule(torch.nn.Module):
     """
@@ -65,8 +68,6 @@ class SAModule(torch.nn.Module):
         # These pairs of points could represent edges for points within radius r to their respective centroid.
         row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
                           max_num_neighbors=64)
-
-
         edge_index = torch.stack([col, row], dim=0)
 
         # select features x of all centroids
@@ -75,7 +76,8 @@ class SAModule(torch.nn.Module):
         # PointNet Layer
         # get aggregated features by convolution operation on input features;
         # PointNetConv applied to adjacency matrix and input features
-        x = self.conv((x, centroids_features_x), (pos, pos[idx]), edge_index)  # FIXME pos[idx] gives problems here
+
+        x = self.conv((x if x is None else x, centroids_features_x), (pos, pos[idx]), edge_index)  # FIXME pos[idx] gives problems here
 
         # Set positions and batch indices to the subset of centroids for the next layer as input
         pos, batch = pos[idx], batch[idx]
@@ -118,7 +120,7 @@ class Net(torch.nn.Module):
         return self.mlp(x).log_softmax(dim=-1)
 
 
-def train(epoch):
+def train(epoch, model, train_loader, optimizer, device, loss = False,):
     model.train()
 
     for data in train_loader:
@@ -127,9 +129,11 @@ def train(epoch):
         loss = F.nll_loss(model(data), data.y)
         loss.backward()
         optimizer.step()
+    if loss:
+        return loss
 
 
-def test(loader):
+def test(loader, model, device):
     model.eval()
 
     correct = 0
@@ -141,37 +145,99 @@ def test(loader):
     return correct / len(loader.dataset)
 
 
+# def parse_args(argv):
+#    inputfile = ''
+#    outputfile = ''
+#    opts, args = getopt.getopt(argv,"hi:o:",["ifile=","ofile="])
+#    for opt, arg in opts:
+#       if opt == '-h':
+#          print ('test.py -i <inputfile> -o <outputfile>')
+#          sys.exit()
+#       elif opt in ("-i", "--ifile"):
+#          inputfile = arg
+#       elif opt in ("-o", "--ofile"):
+#          outputfile = arg
+#    print ('Input file is ', inputfile)
+#    print ('Output file is ', outputfile)
+#    return inputfile, outputfile
+
+
+def parse_args(argv):
+    # Default values
+    inputfile = ''
+    outputfile = ''
+    n_points = 64
+    n_epochs = 5
+    bias = 0.5
+    k = 10
+
+    try:
+        opts, args = getopt.getopt(argv, "hi:o:n:e:b:k:", ["ifile=", "ofile=","n_points=", "n_epochs=", "bias=", "k="])
+    except getopt.GetoptError:
+        print('test.py -i <inputfile> -o <outputfile> -n <n_epochs> -b <bias> -k <k_value>')
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt == '-h':
+            print('test.py -i <inputfile> -o <outputfile> -n <n_epochs> -b <bias> -k <k_value>')
+            sys.exit()
+        elif opt in ("-i", "--ifile"):
+            inputfile = arg
+        elif opt in ("-o", "--ofile"):
+            outputfile = arg
+        elif opt in ("-n", "--n_points"):
+            n_points = int(arg)
+        elif opt in ("-e", "--n_epochs"):
+            n_epochs = int(arg)
+        elif opt in ("-b", "--bias"):
+            bias = float(arg)  # Convert the argument to a boolean
+        elif opt in ("-k", "--k"):
+            k = int(arg)
+
+    print('Input file is', inputfile)
+    print('Output file is', outputfile)
+    print('Pointcloud size:', n_points)
+    print('Number of epochs:', n_epochs)
+    print('Bias:', bias)
+    print('Value of k:', k)
+
+    return inputfile, outputfile, n_points, n_epochs, bias, k
+
+
+# works locally
+"""
+python c_pointnet2_classification.py -i /Users/paulhosek/PycharmProjects/GeometricDL/../data/ModelNet10 -o test.txt -n 64 -e 2 -b 0.5 -k 10
+"""
 if __name__ == '__main__':
-    path = "/var/scratch/pmms2305/ModelNet10"
-    #local: /Users/paulhosek/PycharmProjects/GeometricDL/../data/ModelNet10
+    inputfile, outputfile, n_points, n_epochs, bias, k = parse_args(sys.argv[1:])
 
-    # pre_transform, transform = T.NormalizeScale(), T.SamplePoints(256)  # 1024
-    # train_dataset = ModelNet(path, '10', True, transform, pre_transform)
-    # test_dataset = ModelNet(path, '10', False, transform, pre_transform)
-    model_name = "test"  # most_curved, fps
-    folder = "fps"
-    train_dataset = utils.import_train(int(1024), train=True, path=path)
-    test_dataset = utils.import_train(int(1024), train=False, path=path)
 
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True,
-                              num_workers=4)  # 6 workers
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False,
-                             num_workers=4)  # 6 workers
+    pre_transform, transform = T.NormalizeScale(), T.SamplePoints(n_points)  # 1024
+    train_dataset = ModelNet(inputfile, '10', True, transform, pre_transform)
+    test_dataset = ModelNet(inputfile, '10', False, transform, pre_transform)
 
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)  # 6 workers
+    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)  # 6 workers
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Net(bias=0.6, k = 10).to(device)
-    # model.load_state_dict(torch.load(f"data/{folder}/{model_name}_model.pt"))
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    #
-    # with open("data/curve/2_1024_test_acc", "a+") as f:
-    #     f.write("model_name,epoch,test_acc\n")
+    print(device)
 
-    for epoch in range(1, 4):  # 201
+    model = Net(bias=bias, k=k).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    print("net build")
+
+    accuracies = torch.zeros(n_epochs)
+    for epoch in range(1, n_epochs+1):  # 201
         before = time.time()
-        train(epoch)
-        test_acc = test(test_loader)
+        # train(epoch, model=model)
+        # test_acc = test(test_loader, model=model)
+        train_loss = train(epoch, model, train_loader, optimizer, device,loss=True)
+        test_acc = test(test_loader,model, device)
+
         print(f'Epoch: {epoch}, Test: {test_acc}')
         print("Duration:", time.time()-before)
-        # with open(f"data/{folder}/{model_name}", "a+") as f:
-        #     f.write(f"{model_name},{epoch},{test_acc}\n")
-        # torch.save(model.state_dict(), f"data/{folder}/{model_name}_model.pt")
+        accuracies[epoch-1] = test_acc
+
+    with open(outputfile, mode='a', newline='') as csv_file:
+        csv_writer = csv.writer(csv_file)
+
+        csv_writer.writerow([n_points, n_epochs, bias, k, str(accuracies.tolist())])

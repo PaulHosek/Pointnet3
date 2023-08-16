@@ -59,7 +59,7 @@ def principal_curvature(point_cloud_pos, neighbor_idx):
     """
     eigenv = compute_eigenvalues(point_cloud_pos,neighbor_idx)
     denominator = eigenv[:, 0] + eigenv[:, 1] + eigenv[:, 2]
-    result = torch.zeros(len(denominator))
+    result = torch.zeros(len(denominator), device=point_cloud_pos.device) #.to(cloud.device)
     nonzero_indices = denominator != 0
     result[nonzero_indices] = eigenv[:, 2][nonzero_indices] / denominator[nonzero_indices]
     return result

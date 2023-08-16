@@ -1,11 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="das5" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="snellius" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="das5">
         <serverdata>
           <mappings>
             <mapping deploy="/GeometricDL" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="snellius">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/GeometricDL" local="$PROJECT_DIR$" web="/" />
+            <mapping local="" />
           </mappings>
         </serverdata>
       </paths>
