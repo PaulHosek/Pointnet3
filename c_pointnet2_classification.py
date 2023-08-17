@@ -58,6 +58,7 @@ class SAModule(torch.nn.Module):
         # print(self.ratio)
         # print(self.ratio.shape)
         # idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args)
+        print(batch)
         args2 = [self.bias, sampling_algs.max_curve_sampler, self.k]
         func2 = sampling_algs.bias_anyvsfps_sampler
         idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, func2, args2)

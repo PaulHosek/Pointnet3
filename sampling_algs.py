@@ -128,7 +128,8 @@ def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
         ptr = deg.new_zeros(batch_size + 1)
         torch.cumsum(deg, 0, out=ptr[1:])
     else:
-        ptr = torch.tensor([0, x.size(0)], device=x.device)
+        batch = torch.tensor([0, x.size(0)], device=x.device)
+
     unique_batch = torch.unique(batch)
     num_point_clouds = unique_batch[-1] + 1  # e.g., 32
     nr_points_per_cloud = int(x.size(0) / num_point_clouds)
@@ -137,20 +138,23 @@ def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
     # Iterate over the point clouds
     desired_num_points = math.ceil(ratio * nr_points_per_cloud)
     out = torch.empty(desired_num_points * num_point_clouds, dtype=torch.long)
-    for i in range(num_point_clouds):  # use enumerate
+    for i in range(num_point_clouds):
         cloud = x_reshaped[i, :, :]
 
         # compute
         curve_idx_reordered = sampler(cloud, desired_num_points, *sampler_args)
 
         ptr = i * nr_points_per_cloud  # shift local point index by cloud index
-        out[i * desired_num_points:(i + 1) * desired_num_points] = curve_idx_reordered + ptr
+
+        # endpoint = min((i + 1) * desired_num_points, curve_idx_reordered.size(0))
+
+        out[i * desired_num_points:i*desired_num_points + curve_idx_reordered.size(0)] = curve_idx_reordered + ptr
 
     return out
 
 
 def by_curvature(x, batch, ratio, k):
-    # TODO, batch is 0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4...9,30,30,30,30,31,31,31,31 array
+    #  batch is 0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4...9,30,30,30,30,31,31,31,31 array
     #  have it precomputed could use it for indexing and paralel compute later
     """
     Select the points based on descending curvature.

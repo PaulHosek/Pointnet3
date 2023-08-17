@@ -2,7 +2,6 @@ import wandb
 
 wandb.login()
 
-
 import getopt
 import os.path as osp
 import sys
@@ -18,11 +17,8 @@ import sampling_algs
 import utils
 import time
 import csv
+
 global inputfile
-
-
-
-
 
 
 class SAModule(torch.nn.Module):
@@ -71,7 +67,6 @@ class SAModule(torch.nn.Module):
         func2 = sampling_algs.bias_anyvsfps_sampler
         idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, func2, args2)
 
-
         # Grouping Layer
         # row, col are 1D arrays. If stacked, the columns of the new array represent pairs of points.
         # These pairs of points could represent edges for points within radius r to their respective centroid.
@@ -86,7 +81,8 @@ class SAModule(torch.nn.Module):
         # get aggregated features by convolution operation on input features;
         # PointNetConv applied to adjacency matrix and input features
 
-        x = self.conv((x if x is None else x, centroids_features_x), (pos, pos[idx]), edge_index)  # FIXME pos[idx] gives problems here
+        x = self.conv((x if x is None else x, centroids_features_x), (pos, pos[idx]),
+                      edge_index)  # FIXME pos[idx] gives problems here
 
         # Set positions and batch indices to the subset of centroids for the next layer as input
         pos, batch = pos[idx], batch[idx]
@@ -107,7 +103,7 @@ class GlobalSAModule(torch.nn.Module):
 
 
 class Net(torch.nn.Module):
-    def __init__(self,bias,k):
+    def __init__(self, bias, k):
         super().__init__()
         self.bias = bias
         self.k = k
@@ -129,7 +125,7 @@ class Net(torch.nn.Module):
         return self.mlp(x).log_softmax(dim=-1)
 
 
-def train(epoch, model, train_loader, optimizer, device, loss = False,):
+def train(epoch, model, train_loader, optimizer, device, loss=False, ):
     model.train()
 
     for data in train_loader:
@@ -153,6 +149,7 @@ def test(loader, model, device):
         correct += pred.eq(data.y).sum().item()
     return correct / len(loader.dataset)
 
+
 def parse_inputfile(argv):
     # Default values
     inputfile = ''
@@ -172,6 +169,7 @@ def parse_inputfile(argv):
 
     print('Input file is', inputfile)
     return inputfile
+
 
 # def parse_args(argv):
 #     # Default values
@@ -233,27 +231,26 @@ def parse_inputfile(argv):
 
 def main():
     run = wandb.init()
-    lr  =  wandb.config.lr
+    lr = wandb.config.lr
     epochs = wandb.config.epochs
 
     for epoch in np.arange(1, epochs):
-      train_acc, train_loss = train_one_epoch(epoch, lr)
-      val_acc, val_loss = evaluate_one_epoch(epoch)
+        train_acc, train_loss = train_one_epoch(epoch, lr)
+        val_acc, val_loss = evaluate_one_epoch(epoch)
 
-      wandb.log({
-        'epoch': epoch,
-        'train_acc': train_acc,
-        'train_loss': train_loss,
-        'n_points': n_points,
-        'val_acc': val_acc,
-        'val_loss': val_loss
-      })
+        wandb.log({
+            'epoch': epoch,
+            'train_acc': train_acc,
+            'train_loss': train_loss,
+            'n_points': n_points,
+            'val_acc': val_acc,
+            'val_loss': val_loss
+        })
 
 
 def main():
-
     run = wandb.init()
-    lr  =  wandb.config.lr
+    lr = wandb.config.lr
     n_points = wandb.config.n_points
     n_epochs = wandb.config.epochs
     bias = wandb.config.bias
@@ -288,22 +285,22 @@ def main():
     print("net build")
 
     accuracies = torch.zeros(n_epochs)
-    for epoch in range(1, n_epochs+1):  # 201
+    for epoch in range(1, n_epochs + 1):  # 201
         before = time.time()
         # train(epoch, model=model)
         # test_acc = test(test_loader, model=model)
         train_loss = train(epoch, model, train_loader, optimizer, device, loss=True)
         test_acc = test(test_loader, model, device)
         wandb.log({
-        'epoch': epoch,
-        'train_loss': train_loss,
-        'test_acc': test_acc,
-        "Duration:": time.time() - before,
+            'epoch': epoch,
+            'train_loss': train_loss,
+            'test_acc': test_acc,
+            "Duration:": time.time() - before,
         })
 
         print(f'Epoch: {epoch}, Test: {test_acc}')
-        print("Duration:", time.time()-before)
-        accuracies[epoch-1] = test_acc
+        print("Duration:", time.time() - before)
+        accuracies[epoch - 1] = test_acc
 
 
 # inputfile, _, _, _, _, _ = pn2c.parse_args(sys.argv[1:])
@@ -314,15 +311,16 @@ if __name__ == "__main__":
     inputfile = parse_inputfile(sys.argv[1:])
     sweep_configuration = {
         'method': 'random',
-        'name': 'sweep_1',
+        'name': 'sweep_2',
         'metric': {'goal': 'maximize', 'name': 'test_acc'},
         'parameters':
             {
-                'epochs': {'values': [5,10,15]},
+                'epochs': {'values': [7]},
                 'inputfile': {'values': [inputfile]},
-                'n_points': {'values': [32, 128, 512, 1024, 2048]},  # TODO shorter for testing, add rest later
+                'n_points': {'values': [32, 128, 512, 1024]},  # TODO shorter for testing, add rest later
                 'lr': {'values': [.001]},
-                "bias": {'max': 1, 'min': 0},
+                # "bias": {'max': 1, 'min': 0},
+                "bias": {'values': [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]},
                 "k": {'max': 20, 'min': 3}
             }
     }
@@ -333,5 +331,3 @@ if __name__ == "__main__":
     print(inputfile)
 
     wandb.agent(sweep_id, function=main, count=1000)
-
-

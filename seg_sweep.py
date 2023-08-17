@@ -2,7 +2,7 @@ import os.path as osp
 
 import torch
 import torch.nn.functional as F
-from pointnet2_classification import GlobalSAModule, SAModule
+from c_pointnet2_classification import GlobalSAModule, SAModule
 from torch_scatter import scatter
 from torchmetrics.functional import jaccard_index
 
@@ -47,11 +47,11 @@ class FPModule(torch.nn.Module):
 class Net(torch.nn.Module):
     def __init__(self, num_classes):
         super().__init__()
-        bias = 0.5
-        k = 10
+        bias = 0
+        k = 10 # TODO hardcoded k and bias for now, remove it.
         # Input channels account for both `pos` and node features.
-        self.sa1_module = SAModule(0.2, 0.2, MLP([3 + 3, 64, 64, 128]),bias=bias,k=k)
-        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]),bias=bias,k=k)
+        self.sa1_module = SAModule(0.2, 0.2, MLP([3 + 3, 64, 64, 128]), bias=bias, k=k)
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), bias=bias, k=k)
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.fp3_module = FPModule(1, MLP([1024 + 256, 256, 256]))
@@ -81,6 +81,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = Net(train_dataset.num_classes).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+
 # export PATH= = /sw/arch/RHEL8/EB_production/2022/modulefiles/lang/Anaconda3/2022.05
 
 def train():
@@ -99,7 +100,7 @@ def train():
         total_nodes += data.num_nodes
 
         if (i + 1) % 10 == 0:
-            print(f'[{i+1}/{len(train_loader)}] Loss: {total_loss / 10:.4f} '
+            print(f'[{i + 1}/{len(train_loader)}] Loss: {total_loss / 10:.4f} '
                   f'Train Acc: {correct_nodes / total_nodes:.4f}')
             total_loss = correct_nodes = total_nodes = 0
 
@@ -136,9 +137,9 @@ def test(loader):
     return float(mean_iou.mean())  # Global IoU.
 
 
+if __name__ == "__main__":
 
-
-for epoch in range(1, 31):
-    train()
-    iou = test(test_loader)
-    print(f'Epoch: {epoch:02d}, Test IoU: {iou:.4f}')
+    for epoch in range(1, 31):
+        train()
+        iou = test(test_loader)
+        print(f'Epoch: {epoch:02d}, Test IoU: {iou:.4f}')
