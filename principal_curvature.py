@@ -65,4 +65,20 @@ def principal_curvature(point_cloud_pos, neighbor_idx):
     return result
 
 
+def curvatures_knn(point_cloud_pos, k):
+    """
+    Return curvature values for the point cloud.
+    :param point_cloud_pos: point_cloud.pos [N,3] torch tensor of coordinates.
+    :param k: nr of knn
+    :return: 1D torch.tensor for curvature values. Indices match the ones of the pointcloud.
+    """
+    if point_cloud_pos.size(0) < k:
+        k = point_cloud_pos.size(0)
+
+    knn_res = k_nearest_neighbors(point_cloud_pos, k)
+    return principal_curvature(point_cloud_pos, knn_res)
+
+
+
+
 

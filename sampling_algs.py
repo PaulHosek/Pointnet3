@@ -15,6 +15,8 @@ import principal_curvature
 import scipy.stats as stats
 import math
 import numpy as np
+import matplotlib.pyplot as plt
+
 
 
 
@@ -130,10 +132,13 @@ def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
     else:
         batch = torch.tensor([0, x.size(0)], device=x.device)
 
+
     unique_batch = torch.unique(batch)
     num_point_clouds = unique_batch[-1] + 1  # e.g., 32
     nr_points_per_cloud = int(x.size(0) / num_point_clouds)
     x_reshaped = x.view(num_point_clouds, nr_points_per_cloud, -1)  # [32, 40, 3])
+
+
 
     # Iterate over the point clouds
     desired_num_points = math.ceil(ratio * nr_points_per_cloud)
@@ -265,3 +270,124 @@ def wrap_curve_cpp(x, batch, ratio, k):
     else:
         ptr = torch.tensor([0, x.size(0)], device=x.device)
     return by_curvature(x, ptr, ratio, k)  # (x, ptr, ratio, k)
+
+
+def compute_distances(points, reference_point):
+    return torch.norm(points - reference_point, dim=1)
+
+def fps_pure(points, num_points):
+    num_total_points = points.shape[0]
+    selected_indices = []
+    selected_mask = torch.zeros(num_total_points, dtype=torch.bool)  # Mask to keep track of selected points
+
+    initial_seed_index = torch.randint(0, num_total_points, (1,))
+    selected_indices.append(initial_seed_index.item())
+    selected_mask[selected_indices[-1]] = True
+
+    for _ in range(num_points):
+        current_points = points[selected_indices]
+        distances = torch.min(torch.stack([compute_distances(points, p) for p in current_points]), dim=0).values
+
+        # Exclude distances of already selected points
+        distances[selected_mask] = float('-inf')
+
+        farthest_index = torch.argmax(distances)
+        selected_indices.append(farthest_index.item())
+        selected_mask[selected_indices[-1]] = True
+
+    return torch.tensor(selected_indices)
+
+def fps_weighted(points,num_points, curvature_values, curvature_scalar):
+    """
+    Perform weighted farthest point sampling based on both distance and curvature.
+    The curvature scalar sets the weighting for the curvature over distance.
+    Higher curvature scalar = more weight to curvature, less weight to distance.
+
+    :param points: Tensor of shape [N, 3] representing the point cloud.
+    :param curvature_values: Tensor of shape [N] containing curvature values for each point.
+    :param num_points: Number of points to sample.
+    :param curvature_scalar: A scalar weight for the curvature values.
+    :return: 1D tensor of indices representing the selected points.
+    """
+    num_total_points = points.shape[0]
+    selected_indices = []
+    selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
+
+    initial_seed_index = torch.randint(0, num_total_points, (1,))
+    selected_indices.append(initial_seed_index.item())
+    selected_mask[selected_indices[-1]] = True
+    for _ in range(num_points):
+        current_points = points[selected_indices]
+
+        distances = torch.min(torch.stack([compute_distances(points, p) for p in current_points]), dim=0).values
+        distances[selected_mask] = float('-inf')
+
+        # curvatures = curvature_values[selected_indices]
+        weighted_scores = distances + (curvature_values * curvature_scalar)
+        selected_idx = torch.argmax(weighted_scores)
+        selected_indices.append(selected_idx.item())
+        selected_mask[selected_indices[-1]] = True
+
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+        # scatter1 = ax.scatter(points[:,0], points[:,1], points[:,2], marker='.',alpha=.1,color="grey")
+        # scatter2 = ax.scatter(points[selected_indices,0], points[selected_indices,1], points[selected_indices,2], marker='o',alpha=1,color="orange")
+        # scatter3 = ax.scatter(points[selected_idx,0], points[selected_idx,1], points[selected_idx,2], marker='X',s=20,alpha=1,color="red")
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+        # ax.view_init(elev=30, azim=340)
+        # plt.show(block=True)
+        # if i>10:
+        #     raise KeyboardInterrupt
+
+    return torch.tensor(selected_indices)
+
+def fps_top_n(points, num_points, n, curvature_values):
+    """
+    Perform farthest point sampling by selecting the n farthest points based on distance and
+    then choosing the one with the highest curvature value among those n points.
+
+    :param points: Tensor of shape [N, 3] representing the point cloud.
+    :param num_points: Number of points to sample.
+    :param n: Number of points to consider for curvature-based selection.
+    :param curvature_values: Tensor of shape [N] containing curvature values for each point.
+    :return: 1D tensor of indices representing the selected points.
+    """
+    num_total_points = points.shape[0]
+    selected_indices = []
+    selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
+
+
+    initial_seed_index = torch.randint(0, num_total_points, (1,))
+    selected_indices.append(initial_seed_index.item())
+    selected_mask[selected_indices[-1]] = True
+    for _ in range(num_points):
+        current_points = points[selected_indices]
+        distances = torch.min(torch.stack([compute_distances(points, p) for p in current_points]), dim=0).values
+        farthest_indices = torch.topk(distances.flatten(), n).indices
+
+        distances[selected_mask] = float('-inf')
+
+        res = torch.argmax(curvature_values[farthest_indices])
+        selected_index = farthest_indices[res.item()]
+
+        selected_indices.append(selected_index.item())
+        selected_mask[selected_indices[-1]] = True
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+        # scatter1 = ax.scatter(points[:,0], points[:,1], points[:,2], marker='.',alpha=.1,color="grey")
+        # scatter2 = ax.scatter(points[selected_indices,0], points[selected_indices,1], points[selected_indices,2], marker='o',alpha=1,color="orange")
+        # scatter3 = ax.scatter(points[farthest_indices,0], points[farthest_indices,1], points[farthest_indices,2], marker='o',alpha=1,color="royalblue")
+        # scatter4 = ax.scatter(points[selected_index,0], points[selected_index,1], points[selected_index,2], marker='X',s=20,alpha=1,color="red")
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+        # # rotate_plot()
+        # ax.view_init(elev=30, azim=340)
+        # plt.show(block=True)
+
+
+
+
+    return torch.tensor(selected_indices)

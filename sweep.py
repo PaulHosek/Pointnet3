@@ -229,23 +229,23 @@ def parse_inputfile(argv):
 #   return acc, loss
 
 
-def main():
-    run = wandb.init()
-    lr = wandb.config.lr
-    epochs = wandb.config.epochs
-
-    for epoch in np.arange(1, epochs):
-        train_acc, train_loss = train_one_epoch(epoch, lr)
-        val_acc, val_loss = evaluate_one_epoch(epoch)
-
-        wandb.log({
-            'epoch': epoch,
-            'train_acc': train_acc,
-            'train_loss': train_loss,
-            'n_points': n_points,
-            'val_acc': val_acc,
-            'val_loss': val_loss
-        })
+# def main():
+#     run = wandb.init()
+#     lr = wandb.config.lr
+#     epochs = wandb.config.epochs
+#
+#     for epoch in np.arange(1, epochs):
+#         train_acc, train_loss = train_one_epoch(epoch, lr)
+#         val_acc, val_loss = evaluate_one_epoch(epoch)
+#
+#         wandb.log({
+#             'epoch': epoch,
+#             'train_acc': train_acc,
+#             'train_loss': train_loss,
+#             'n_points': n_points,
+#             'val_acc': val_acc,
+#             'val_loss': val_loss
+#         })
 
 
 def main():
