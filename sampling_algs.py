@@ -316,7 +316,7 @@ def fps_weighted(points,num_points, curvature_values, curvature_scalar):
     initial_seed_index = torch.randint(0, num_total_points, (1,))
     selected_indices.append(initial_seed_index.item())
     selected_mask[selected_indices[-1]] = True
-    for _ in range(num_points):
+    for _ in range(num_points-1):
         current_points = points[selected_indices]
 
         distances = torch.min(torch.stack([compute_distances(points, p) for p in current_points]), dim=0).values
@@ -354,6 +354,9 @@ def fps_top_n(points, num_points, n, curvature_values):
     :param curvature_values: Tensor of shape [N] containing curvature values for each point.
     :return: 1D tensor of indices representing the selected points.
     """
+    if n > num_points:
+        n = min(int(num_points/2),5)
+
     num_total_points = points.shape[0]
     selected_indices = []
     selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
@@ -362,7 +365,7 @@ def fps_top_n(points, num_points, n, curvature_values):
     initial_seed_index = torch.randint(0, num_total_points, (1,))
     selected_indices.append(initial_seed_index.item())
     selected_mask[selected_indices[-1]] = True
-    for _ in range(num_points):
+    for _ in range(num_points-1):
         current_points = points[selected_indices]
         distances = torch.min(torch.stack([compute_distances(points, p) for p in current_points]), dim=0).values
         farthest_indices = torch.topk(distances.flatten(), n).indices
@@ -389,5 +392,5 @@ def fps_top_n(points, num_points, n, curvature_values):
 
 
 
-
+    print(selected_indices)
     return torch.tensor(selected_indices)
