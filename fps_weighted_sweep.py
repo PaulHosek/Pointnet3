@@ -1,8 +1,8 @@
-import wandb
+# import wandb
 
 import principal_curvature
 
-wandb.login()
+# wandb.login()
 
 import getopt
 import os.path as osp
@@ -28,7 +28,7 @@ class SAModule(torch.nn.Module):
     set abstraction module, torch.nn.Module = can contain trainable parameters and be optimized during training
     """
 
-    def __init__(self, ratio, r, nn, top_n):
+    def __init__(self, ratio, r, nn, curvature_scalar):
         """
          nn = nr of output features
         :param ratio:
@@ -39,7 +39,7 @@ class SAModule(torch.nn.Module):
         self.ratio = ratio
         self.r = r
         self.conv = PointNetConv(nn, add_self_loops=False)
-        self.top_n = top_n
+        self.curvature_scalar = curvature_scalar
 
     def forward(self, x, pos, batch, curvature_values): # add curvature values arg again
         """
@@ -58,13 +58,18 @@ class SAModule(torch.nn.Module):
         # must take in shape [nr points, 3] -> 1D index vector
 
 
-        # sampler_args = [self.top_n, curvature_values]
-        # sampler = sampling_algs.fps_top_n
+        # sampler_args = [curvature_values, self.curvature_scalar]
+        # sampler = sampling_algs.fps_weighted
         # idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args)
 
-        args2 = [.5, sampling_algs.max_curve_sampler, 10]
-        func2 = sampling_algs.bias_anyvsfps_sampler
-        idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, func2, args2)
+        sampler_args = [curvature_values, self.curvature_scalar]
+        sampler = sampling_algs.fps_weighted
+        idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args,
+                                                       pass_cloud_idx=True)
+
+        # args2 = [.5, sampling_algs.max_curve_sampler, 10]
+        # func2 = sampling_algs.bias_anyvsfps_sampler
+        # idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, func2, args2)
 
 
 
@@ -105,13 +110,13 @@ class GlobalSAModule(torch.nn.Module):
 
 
 class Net(torch.nn.Module):
-    def __init__(self, top_n):
+    def __init__(self, curvature_scalar):
         super().__init__()
-        self.top_n = top_n
+        self.curvature_scalar = curvature_scalar
 
         # Input channels account for both `pos` and node features.
-        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), self.top_n)
-        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), self.top_n)
+        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), self.curvature_scalar)
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), self.curvature_scalar)
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.mlp = MLP([1024, 512, 256, 10], dropout=0.5, norm=None)
@@ -128,10 +133,8 @@ class Net(torch.nn.Module):
         sa0_out = (data.x, data.pos, data.batch, curvature_values)
         sa1_out = self.sa1_module(*sa0_out)
 
-        print([i.shape for i in sa1_out])
         # x, pos, batch, _ = self.sa2_module(*sa1_out) # remove the curvature values for the global layer
         x, pos, batch, curvature_values = self.sa2_module(*sa1_out) # remove the curvature values for the global layer
-        print([i.shape for i in [x, pos, batch, curvature_values]])
         sa3_out = self.sa3_module(*[x, pos, batch])
         x, pos, batch = sa3_out
 
@@ -191,19 +194,19 @@ def main():
     # lr = wandb.config.lr
     # n_points = wandb.config.n_points
     # n_epochs = wandb.config.epochs
-    # top_n = wandb.config.top_n
+    # curvature_scalar = wandb.config.curvature_scalar
     # k = wandb.config.k
     #
     # print('lr', lr)
     # print('Pointcloud size:', n_points)
     # print('Number of epochs:', n_epochs)
-    # print('topn:', top_n)
+    # print('topn:', curvature_scalar)
     # print('Value of k:', k)
 
     lr  =  .001
     n_points = 32
     n_epochs = 3
-    top_n = 10
+    curvature_scalar = 10
     k = 3
     ratio = 0.5
 
@@ -217,7 +220,7 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)  # 6 workers
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
-    model = Net(top_n=top_n).to(device)
+    model = Net(curvature_scalar=curvature_scalar).to(device)
     # wandb.watch(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("net build")
@@ -229,12 +232,12 @@ def main():
         # test_acc = test(test_loader, model=model)
         train_loss = train(epoch, model, train_loader, optimizer, device, loss=True)
         test_acc = test(test_loader, model, device)
-        wandb.log({
-            'epoch': epoch,
-            'train_loss': train_loss,
-            'test_acc': test_acc,
-            "Duration:": time.time() - before,
-        })
+        # wandb.log({
+        #     'epoch': epoch,
+        #     'train_loss': train_loss,
+        #     'test_acc': test_acc,
+        #     "Duration:": time.time() - before,
+        # })
 
         print(f'Epoch: {epoch}, Test: {test_acc}')
         print("Duration:", time.time() - before)
@@ -258,7 +261,7 @@ if __name__ == "__main__":
     #             'inputfile': {'values': [inputfile]},
     #             'n_points': {'values': [1024]},
     #             'lr': {'values': [.001]},
-    #             "top_n": {'values': [1, 8, 16, 32, 64]},
+    #             "curvature_scalar": {'values': [1, 8, 16, 32, 64,128]},
     #             "k": {'max': 20, 'min': 3}
     #         }
     # }

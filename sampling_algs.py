@@ -95,7 +95,7 @@ def bias_anyvsfps_sampler(cloud, desired_num_points, bias, func1, args1):
 #     ratio = pass
 
 
-def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
+def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args, pass_cloud_idx =False):
     """
     Coordinate batch-wise point cloud sampling.
 
@@ -147,7 +147,10 @@ def batch_sampling_coordinator(x, batch, ratio, sampler, sampler_args):
         cloud = x_reshaped[i, :, :]
 
         # compute
-        curve_idx_reordered = sampler(cloud, desired_num_points, *sampler_args)
+        if not pass_cloud_idx:
+            curve_idx_reordered = sampler(cloud, desired_num_points, *sampler_args)
+        else:
+            curve_idx_reordered = sampler(cloud, desired_num_points,i, *sampler_args)
 
         ptr = i * nr_points_per_cloud  # shift local point index by cloud index
 
@@ -297,7 +300,7 @@ def fps_pure(points, num_points):
 
     return torch.tensor(selected_indices)
 
-def fps_weighted(points,num_points, curvature_values, curvature_scalar):
+def fps_weighted(points,num_points,cloud_idx,curvature_values, curvature_scalar):
     """
     Perform weighted farthest point sampling based on both distance and curvature.
     The curvature scalar sets the weighting for the curvature over distance.
@@ -312,6 +315,7 @@ def fps_weighted(points,num_points, curvature_values, curvature_scalar):
     num_total_points = points.shape[0]
     selected_indices = []
     selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
+    curvature_values = curvature_values[cloud_idx*num_total_points:(cloud_idx+1)*num_total_points]
 
     initial_seed_index = torch.randint(0, num_total_points, (1,))
     selected_indices.append(initial_seed_index.item())
@@ -343,7 +347,7 @@ def fps_weighted(points,num_points, curvature_values, curvature_scalar):
 
     return torch.tensor(selected_indices)
 
-def fps_top_n(points, num_points, n, curvature_values):
+def fps_top_n(points, num_points, cloud_idx,curvature_values, n):
     """
     Perform farthest point sampling by selecting the n farthest points based on distance and
     then choosing the one with the highest curvature value among those n points.
@@ -360,8 +364,7 @@ def fps_top_n(points, num_points, n, curvature_values):
     num_total_points = points.shape[0]
     selected_indices = []
     selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
-
-
+    curvature_values = curvature_values[cloud_idx*num_total_points:(cloud_idx+1)*num_total_points]
     initial_seed_index = torch.randint(0, num_total_points, (1,))
     selected_indices.append(initial_seed_index.item())
     selected_mask[selected_indices[-1]] = True
@@ -392,5 +395,4 @@ def fps_top_n(points, num_points, n, curvature_values):
 
 
 
-    print(selected_indices)
     return torch.tensor(selected_indices)
