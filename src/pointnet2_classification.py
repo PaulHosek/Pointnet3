@@ -1,16 +1,9 @@
-import os.path as osp
-
 import torch
 import torch.nn.functional as F
 
-import torch_geometric.transforms as T
-from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
-from torch_cluster import radius as c_radius
-import sampling_algs
-import utils
-import numpy as np  # only for testing
+from torch_geometric.nn import MLP, PointNetConv, global_max_pool, radius
+from geometry_estimation import sampling_algs, utils
 import time
 
 class SAModule(torch.nn.Module):

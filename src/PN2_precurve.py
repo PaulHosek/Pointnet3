@@ -1,5 +1,4 @@
 import getopt
-import os.path as osp
 import sys
 
 import torch
@@ -8,20 +7,19 @@ import torch.nn.functional as F
 import torch_geometric.transforms as T
 from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
-import sampling_algs
-import utils
+from torch_geometric.nn import MLP, PointNetConv, global_max_pool, radius
+from geometry_estimation import sampling_algs
 import time
 import csv
 
-torch.set_printoptions(profile="full")
+
 
 class SAModule(torch.nn.Module):
     """
     set abstraction module, torch.nn.Module = can contain trainable parameters and be optimized during training
     """
 
-    def __init__(self, ratio, r, nn, bias, k, curvatures):
+    def __init__(self, ratio, r, nn, bias, k):
         """
          nn = nr of output features
         :param ratio:
@@ -34,7 +32,6 @@ class SAModule(torch.nn.Module):
         self.conv = PointNetConv(nn, add_self_loops=False)
         self.bias = bias
         self.k = k
-        self.curvatures = curvatures
 
     def forward(self, x, pos, batch):
         """
@@ -99,15 +96,14 @@ class GlobalSAModule(torch.nn.Module):
 
 
 class Net(torch.nn.Module):
-    def __init__(self,bias,k, curvatures):
+    def __init__(self,bias,k):
         super().__init__()
         self.bias = bias
         self.k = k
-        self.curvatures = curvatures
 
         # Input channels account for both `pos` and node features.
-        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), self.bias, self.k, self.curvatures)
-        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), self.bias, self.k, self.curvatures)
+        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), self.bias, self.k)
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), self.bias, self.k)
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.mlp = MLP([1024, 512, 256, 10], dropout=0.5, norm=None)
@@ -214,18 +210,19 @@ if __name__ == '__main__':
     inputfile, outputfile, n_points, n_epochs, bias, k = parse_args(sys.argv[1:])
 
 
-    pre_transform, transform = T.NormalizeScale(), T.SamplePoints(n_points)  # 1024
+    pre_transform, transform = T.NormalizeScale(), T.SamplePoints(20000)  # 1024
     train_dataset = ModelNet(inputfile, '10', True, transform, pre_transform)
     test_dataset = ModelNet(inputfile, '10', False, transform, pre_transform)
 
+
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)  # 6 workers
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)  # 6 workers
+
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
-    curvatures = pass
-    raie KeyboardInterrupt
 
-    model = Net(bias=bias, k=k, curvatures=curvatures).to(device)
+    model = Net(bias=bias, k=k).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     print("net build")
 
