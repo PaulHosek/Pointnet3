@@ -1,5 +1,4 @@
 import getopt
-import os.path as osp
 import sys
 
 import torch
@@ -8,9 +7,8 @@ import torch.nn.functional as F
 import torch_geometric.transforms as T
 from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
-import sampling_algs
-import utils
+from torch_geometric.nn import MLP, PointNetConv, global_max_pool, radius
+from geometry_estimation import sampling_algs
 import time
 import csv
 

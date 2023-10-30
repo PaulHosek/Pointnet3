@@ -27,6 +27,7 @@ def covariance_matrix(point_cloud_pos, knn_idx):
     return torch.matmul(reorder_diffs, diffs) / knn.shape[1]
 
 
+
 def compute_eigenvalues(point_cloud_pos, knn_idx):
     """
     Calculates the eigenvalues of the covariance matrix for a given point cloud.

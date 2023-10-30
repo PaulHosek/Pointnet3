@@ -1,11 +1,10 @@
-# import wandb
+import wandb
 
-import principal_curvature
 
-# wandb.login()
+
+wandb.login()
 
 import getopt
-import os.path as osp
 import sys
 
 import torch
@@ -14,11 +13,9 @@ import torch.nn.functional as F
 import torch_geometric.transforms as T
 from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
-from torch_geometric.nn import MLP, PointNetConv, fps, global_max_pool, radius
-import sampling_algs
-import utils
+from torch_geometric.nn import MLP, PointNetConv, global_max_pool, radius
+from geometry_estimation import sampling_algs, principal_curvature
 import time
-import csv
 
 global inputfile
 
@@ -28,7 +25,7 @@ class SAModule(torch.nn.Module):
     set abstraction module, torch.nn.Module = can contain trainable parameters and be optimized during training
     """
 
-    def __init__(self, ratio, r, nn, curvature_scalar):
+    def __init__(self, ratio, r, nn, top_n):
         """
          nn = nr of output features
         :param ratio:
@@ -39,7 +36,7 @@ class SAModule(torch.nn.Module):
         self.ratio = ratio
         self.r = r
         self.conv = PointNetConv(nn, add_self_loops=False)
-        self.curvature_scalar = curvature_scalar
+        self.top_n = top_n
 
     def forward(self, x, pos, batch, curvature_values): # add curvature values arg again
         """
@@ -58,18 +55,9 @@ class SAModule(torch.nn.Module):
         # must take in shape [nr points, 3] -> 1D index vector
 
 
-        # sampler_args = [curvature_values, self.curvature_scalar]
-        # sampler = sampling_algs.fps_weighted
-        # idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args)
-
-        sampler_args = [curvature_values, self.curvature_scalar]
-        sampler = sampling_algs.fps_weighted
-        idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args,
-                                                       pass_cloud_idx=True)
-
-        # args2 = [.5, sampling_algs.max_curve_sampler, 10]
-        # func2 = sampling_algs.bias_anyvsfps_sampler
-        # idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, func2, args2)
+        sampler_args = [curvature_values, self.top_n]
+        sampler = sampling_algs.fps_top_n
+        idx = sampling_algs.batch_sampling_coordinator(pos, batch, self.ratio, sampler, sampler_args, pass_cloud_idx=True)
 
 
 
@@ -110,13 +98,13 @@ class GlobalSAModule(torch.nn.Module):
 
 
 class Net(torch.nn.Module):
-    def __init__(self, curvature_scalar):
+    def __init__(self, top_n):
         super().__init__()
-        self.curvature_scalar = curvature_scalar
+        self.top_n = top_n
 
         # Input channels account for both `pos` and node features.
-        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), self.curvature_scalar)
-        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), self.curvature_scalar)
+        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]), self.top_n)
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]), self.top_n)
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.mlp = MLP([1024, 512, 256, 10], dropout=0.5, norm=None)
@@ -190,27 +178,22 @@ def parse_inputfile(argv):
 
 
 def main():
-    # run = wandb.init()
-    # lr = wandb.config.lr
-    # n_points = wandb.config.n_points
-    # n_epochs = wandb.config.epochs
-    # curvature_scalar = wandb.config.curvature_scalar
-    # k = wandb.config.k
-    #
-    # print('lr', lr)
-    # print('Pointcloud size:', n_points)
-    # print('Number of epochs:', n_epochs)
-    # print('topn:', curvature_scalar)
-    # print('Value of k:', k)
+    run = wandb.init()
+    lr = wandb.config.lr
+    n_points = wandb.config.n_points
+    n_epochs = wandb.config.epochs
+    top_n = wandb.config.top_n
+
+    print('lr', lr)
+    print('Pointcloud size:', n_points)
+    print('Number of epochs:', n_epochs)
+    print('topn:', top_n)
 
     lr  =  .001
     n_points = 32
     n_epochs = 3
-    curvature_scalar = 10
-    k = 3
-    ratio = 0.5
+    top_n = 10
 
-    print(inputfile)
 
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(n_points)  # 1024
     train_dataset = ModelNet(inputfile, '10', True, transform, pre_transform)
@@ -219,8 +202,7 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=4)  # 6 workers
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False, num_workers=4)  # 6 workers
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(device)
-    model = Net(curvature_scalar=curvature_scalar).to(device)
+    model = Net(top_n=top_n).to(device)
     # wandb.watch(model)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("net build")
@@ -232,12 +214,12 @@ def main():
         # test_acc = test(test_loader, model=model)
         train_loss = train(epoch, model, train_loader, optimizer, device, loss=True)
         test_acc = test(test_loader, model, device)
-        # wandb.log({
-        #     'epoch': epoch,
-        #     'train_loss': train_loss,
-        #     'test_acc': test_acc,
-        #     "Duration:": time.time() - before,
-        # })
+        wandb.log({
+            'epoch': epoch,
+            'train_loss': train_loss,
+            'test_acc': test_acc,
+            "Duration:": time.time() - before,
+        })
 
         print(f'Epoch: {epoch}, Test: {test_acc}')
         print("Duration:", time.time() - before)
@@ -250,28 +232,24 @@ def main():
 
 if __name__ == "__main__":
 
-    # inputfile = parse_inputfile(sys.argv[1:])
-    # sweep_configuration = {
-    #     'method': 'random',
-    #     'name': 'sweep_2',
-    #     'metric': {'goal': 'maximize', 'name': 'test_acc'},
-    #     'parameters':
-    #         {
-    #             'epochs': {'values': [7]},
-    #             'inputfile': {'values': [inputfile]},
-    #             'n_points': {'values': [1024]},
-    #             'lr': {'values': [.001]},
-    #             "curvature_scalar": {'values': [1, 8, 16, 32, 64,128]},
-    #             "k": {'max': 20, 'min': 3}
-    #         }
-    # }
-    # sweep_id = wandb.sweep(
-    #     sweep=sweep_configuration,
-    #     project='full_sweep'
-    # )
-    # print(inputfile)
-    #
-    # wandb.agent(sweep_id, function=main, count=1000)
+    inputfile = parse_inputfile(sys.argv[1:])
+    sweep_configuration = {
+        'method': 'random',
+        'name': 'sweep_1',
+        'metric': {'goal': 'maximize', 'name': 'test_acc'},
+        'parameters':
+            {
+                'epochs': {'values': [7]},
+                'inputfile': {'values': [inputfile]},
+                'n_points': {'values': [1024]},
+                'lr': {'values': [.001]},
+                "top_n": {'values': [1, 8, 16, 32, 64]},
+            }
+    }
+    sweep_id = wandb.sweep(
+        sweep=sweep_configuration,
+        project='top_n'
+    )
 
-    inputfile = "/Users/paulhosek/PycharmProjects/GeometricDL/../data/ModelNet10"
-    main()
+    wandb.agent(sweep_id, function=main, count=3)
+
