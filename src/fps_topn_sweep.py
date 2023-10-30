@@ -14,7 +14,8 @@ import torch_geometric.transforms as T
 from torch_geometric.datasets import ModelNet
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import MLP, PointNetConv, global_max_pool, radius
-from geometry_estimation import sampling_algs, principal_curvature
+import sampling_algs
+import principal_curvature
 import time
 
 global inputfile

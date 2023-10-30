@@ -55,7 +55,7 @@ def import_train(nr_points, train=True,path=None):
     :return: torch tensor of training datapoints
     """
     if path is None:
-        path = osp.join(osp.dirname(osp.realpath(__file__)), '..',
+        path = osp.join(osp.dirname(osp.realpath(__file__)), '',
                                     'data/ModelNet10')
 
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(nr_points)  # 1024

@@ -12,10 +12,7 @@ import torch_geometric.nn
 
 from torch_geometric.typing import OptTensor
 import principal_curvature
-import scipy.stats as stats
 import math
-import numpy as np
-import matplotlib.pyplot as plt
 import torch_cluster
 
 

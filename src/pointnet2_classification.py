@@ -3,7 +3,8 @@ import torch.nn.functional as F
 
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import MLP, PointNetConv, global_max_pool, radius
-from geometry_estimation import sampling_algs, utils
+import utils
+import sampling_algs
 import time
 
 class SAModule(torch.nn.Module):
