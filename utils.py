@@ -5,6 +5,46 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
+from torch_geometric.data import Data
+
+### take dataset and return new one
+def nest_idxsampler(pos, idx_sampler, nr_points, sampling_args):
+    """
+    The sampling alg functions return the selected indices of the points.
+     This function uses one of these samplers, applies it to a pointcloud position data and returns the originaal [nr_points,3] format.
+    :param pos:
+    :param idx_sampler:
+    :param nr_points:
+    :param sampling_args:
+    :return:
+    """
+    selected_indices = idx_sampler(pos, nr_points, *sampling_args)
+    return pos[selected_indices, :]
+
+
+def apply_subsample_transform(modelnet_data, sampler, nr_points, sampling_args=[], sampler_type="idx"):
+    """
+
+    :param modelnet_data: Modelnet dataset
+    :param sampler: Sample pointcloud:
+            input->output: pointcloud.pos -> pointcloud.pos
+            arg
+    :return:
+    """
+
+    transformed_data = list()
+    for cloud in modelnet_data:
+        if sampler_type == "idx":
+            new_pos = nest_idxsampler(cloud.pos, sampler, nr_points,
+                                      sampling_args)  # returns torch tensor of shape [nr points, 3]
+        else:
+            new_pos = sampler(cloud.pos, nr_points, *sampling_args)
+        new_data = Data(pos=new_pos, y=cloud.y)
+        transformed_data.append(new_data)
+    return transformed_data
+
+
+
 def import_train(nr_points, train=True,path=None):
     """
     Import training dataset.
