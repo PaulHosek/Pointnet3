@@ -173,14 +173,14 @@ def main():
     n_points = wandb.config.n_points
     lr = wandb.config.lr
     method = wandb.config.method
-    n_epochs = 10
+    n_epochs = 2 # for testing
 
     print('lr', lr)
     print('Pointcloud size:', n_points)
     print('Number of epochs:', n_epochs)
     print(inputfile)
 
-    base_points = 10_000
+    base_points = 7000 # for testing
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(base_points)
     train_dataset = ModelNet(inputfile, '10', True, transform, pre_transform)
     test_dataset = ModelNet(inputfile, '10', False, transform, pre_transform)
