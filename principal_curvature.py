@@ -79,7 +79,18 @@ def curvatures_knn(point_cloud_pos, k):
     knn_res = k_nearest_neighbors(point_cloud_pos, k)
     return principal_curvature(point_cloud_pos, knn_res)
 
-
+def get_curvatures(data,k=10):
+    """
+    Gives curvature values of all points in all clouds.
+    :param data: modelnet dataset, not positions (e.g.,correct is  training_set)
+    :return: Tensor of size [points_per_cloud,nr_clouds]
+    """
+    points_per_cloud = len(data[0].pos)
+    nr_clouds = data.len()
+    curvature_values = torch.zeros(points_per_cloud, nr_clouds)
+    for idx, cloud in enumerate(data):
+        curvature_values[:,idx] = curvatures_knn(cloud.pos, k=k)
+    return curvature_values
 
 
 

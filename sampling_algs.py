@@ -298,14 +298,14 @@ def fps_pure(points, num_points):
 
     return torch.tensor(selected_indices)
 
-def fps_weighted(points,num_points,cloud_idx,curvature_values, curvature_scalar):
+def fps_weighted_v2(points,num_points,cloud_idx,curvature_values, curvature_scalar):
     """
     Perform weighted farthest point sampling based on both distance and curvature.
     The curvature scalar sets the weighting for the curvature over distance.
     Higher curvature scalar = more weight to curvature, less weight to distance.
 
     :param points: Tensor of shape [N, 3] representing the point cloud.
-    :param curvature_values: Tensor of shape [N] containing curvature values for each point.
+    :param curvature_values: Tensor of shape [cloud_size,nr_clouds]  containing curvature values for each point.
     :param num_points: Number of points to sample.
     :param curvature_scalar: A scalar weight for the curvature values.
     :return: 1D tensor of indices representing the selected points.
@@ -313,7 +313,7 @@ def fps_weighted(points,num_points,cloud_idx,curvature_values, curvature_scalar)
     num_total_points = points.shape[0]
     selected_indices = []
     selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
-    curvature_values = curvature_values[cloud_idx*num_total_points:(cloud_idx+1)*num_total_points]
+    curvature_values = curvature_values[:,cloud_idx]
 
     initial_seed_index = torch.randint(0, num_total_points, (1,))
     selected_indices.append(initial_seed_index.item())
@@ -363,6 +363,56 @@ def fps_top_n(points, num_points, cloud_idx,curvature_values, n):
     selected_indices = []
     selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
     curvature_values = curvature_values[cloud_idx*num_total_points:(cloud_idx+1)*num_total_points]
+    initial_seed_index = torch.randint(0, num_total_points, (1,))
+    selected_indices.append(initial_seed_index.item())
+    selected_mask[selected_indices[-1]] = True
+    for _ in range(num_points-1):
+        current_points = points[selected_indices]
+        distances = torch.min(torch.stack([compute_distances(points, p) for p in current_points]), dim=0).values
+        farthest_indices = torch.topk(distances.flatten(), n).indices
+
+        distances[selected_mask] = float('-inf')
+
+        res = torch.argmax(curvature_values[farthest_indices])
+        selected_index = farthest_indices[res.item()]
+
+        selected_indices.append(selected_index.item())
+        selected_mask[selected_indices[-1]] = True
+        # fig = plt.figure()
+        # ax = fig.add_subplot(111, projection='3d')
+        # scatter1 = ax.scatter(points[:,0], points[:,1], points[:,2], marker='.',alpha=.1,color="grey")
+        # scatter2 = ax.scatter(points[selected_indices,0], points[selected_indices,1], points[selected_indices,2], marker='o',alpha=1,color="orange")
+        # scatter3 = ax.scatter(points[farthest_indices,0], points[farthest_indices,1], points[farthest_indices,2], marker='o',alpha=1,color="royalblue")
+        # scatter4 = ax.scatter(points[selected_index,0], points[selected_index,1], points[selected_index,2], marker='X',s=20,alpha=1,color="red")
+        # ax.set_xlabel('X')
+        # ax.set_ylabel('Y')
+        # ax.set_zlabel('Z')
+        # # rotate_plot()
+        # ax.view_init(elev=30, azim=340)
+        # plt.show(block=True)
+
+
+
+    return torch.tensor(selected_indices)
+
+def fps_top_n_v2(points, num_points, cloud_idx,curvature_values, n):
+    """
+    Perform farthest point sampling by selecting the n farthest points based on distance and
+    then choosing the one with the highest curvature value among those n points.
+
+    :param points: Tensor of shape [N, 3] representing the point cloud.
+    :param num_points: Number of points to sample.
+    :param n: Number of points to consider for curvature-based selection.
+    :param curvature_values: Tensor of shape [cloud_size,nr_clouds] containing curvature values for each point.
+    :return: 1D tensor of indices representing the selected points.
+    """
+    if n > num_points:
+        n = min(int(num_points/2),5)
+
+    num_total_points = points.shape[0]
+    selected_indices = []
+    selected_mask = torch.zeros(num_total_points, dtype=torch.bool)
+    curvature_values = curvature_values[:,cloud_idx]
     initial_seed_index = torch.randint(0, num_total_points, (1,))
     selected_indices.append(initial_seed_index.item())
     selected_mask[selected_indices[-1]] = True
