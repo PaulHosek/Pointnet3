@@ -277,7 +277,7 @@ def compute_distances(points, reference_point):
     return torch.norm(points - reference_point, dim=1)
 
 def fps_pure(points, num_points):
-    num_total_points = points.shape[0]
+    num_total_points = points.shape[0]-1
     selected_indices = []
     selected_mask = torch.zeros(num_total_points, dtype=torch.bool)  # Mask to keep track of selected points
 

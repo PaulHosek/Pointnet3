@@ -14,7 +14,7 @@ import numpy as np  # only for testing
 import time
 import sys
 import getopt
-
+import preprocessing_algs
 class SAModule(torch.nn.Module):
     """
     set abstraction module, torch.nn.Module = can contain trainable parameters and be optimized during training
@@ -166,12 +166,15 @@ if __name__ == '__main__':
     inputfile = parse_inputfile(sys.argv[1:])
 
     base_points = 500  # nr points to uniformly sample from the mesh
-    nr_points = 50  # nr of point to work with in the classifier (sub-sampled by pre-processing from base-points)
+    n_points = 50  # nr of point to work with in the classifier (sub-sampled by pre-processing from base-points)
+    method = "biased_fps"
     pre_transform, transform = T.NormalizeScale(), T.SamplePoints(base_points)  # 1024
     train_dataset = ModelNet(inputfile, '10', True, transform, pre_transform)
     test_dataset = ModelNet(inputfile, '10', False, transform, pre_transform)
 
     # Preprocess sampling here
+    train_dataset = preprocessing_algs.preprocess(train_dataset, nr_points=n_points, method=method)
+    test_dataset = preprocessing_algs.preprocess(test_dataset, nr_points=n_points, method=method)
 
 
 

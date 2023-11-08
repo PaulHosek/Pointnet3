@@ -166,11 +166,6 @@ def parse_inputfile(argv):
     return inputfile
 
 
-{
-    'inputfile': {'values': [inputfile]},
-    'n_points': {'values': [16, 32, 64, 128, 512, 1024]},  # TODO shorter for testing, add rest later
-    "method": {"values": ["fps", "biased_fps", "above_avg_curvature"]}
-}
 
 
 def main():
