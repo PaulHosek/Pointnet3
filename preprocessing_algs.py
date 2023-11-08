@@ -48,15 +48,11 @@ def apply_subsample_transform(modelnet_data, sampler, nr_points, sampling_args=[
     return transformed_data
 
 
-
 def get_minimal_above_average_set(data, curvature_values):
     """
-    # the minimum number of above average points across clouds. Since FPS needs all clouds to be the same size,
-    we nr_points-this_minimum number of least curved points from all clouds.
+    # the minimum number of above average points across clouds. Since FPS needs all clouds to be the same size, we nr_points-this_minimum number of least curved points from all clouds.
 
-    # Note. We know that the largest N points are above average curvature for all point clouds,
-     since we choose N based on the smallest number of point that are above average curvature in any point cloud.
-      Since this is met for the smallest point cloud, it is met for the larger ones by induction.
+    # Note. We know that the largest N points are above average curvature for all point clouds, since we choose N based on the smallest number of point that are above average curvature in any point cloud. Since this is met for the smallest point cloud, it is met for the larger ones by induction.
     :param data:
     :param curvature_values:
     :return:
@@ -64,18 +60,25 @@ def get_minimal_above_average_set(data, curvature_values):
         new_nr_points: the new size of the pointcloud
 
     """
-    data = data.clone()
-    above_average_mask = data > torch.mean(curvature_values, axis=0)
+    above_average_mask = curvature_values > torch.mean(curvature_values, axis=0)
     new_nr_points = above_average_mask.int().sum(axis=0).min()  # must be ≥ the nr of points we want in the NN
-    out_data = [None] * data.len()
+    out_data = list()
     for i, cloud in enumerate(data):
         # select the largest number of points that are above average curvature
         selected_indices = torch.argsort(curvature_values[:, i], descending=True)[:new_nr_points]
-        out_data[i] = cloud.pos[selected_indices, :]
+        out_data.append(Data(pos=cloud.pos[selected_indices, :], y=cloud.y))
     return out_data, new_nr_points
 
 
-def preprocess(data, nr_points, method="fps",nr_candidates = 10,):
+def preprocess(data, nr_points, method="fps",nr_candidates = 10):
+    """
+
+    :param data: modelnet dataset (e.g., training_set)
+    :param nr_points: Nr of points for the pointcloud.
+    :param method: "fps", "biased_fps" or "above_avg_curvature".
+    :param nr_candidates:
+    :return: Subsampled dataset
+    """
     if method =="fps":
         return apply_subsample_transform(data, sampling_algs.fps_pure, nr_points, sampler_type="idx")
     elif method == "biased_fps":
@@ -84,10 +87,11 @@ def preprocess(data, nr_points, method="fps",nr_candidates = 10,):
                                                             sampling_args=[curvature_values, nr_candidates], pass_idx=True)
     elif method == "above_avg_curvature":
         curvature_values = principal_curvature.get_curvatures(data)
-        new_test_data, new_nr_points = get_minimal_above_average_set(data, curvature_values)
+        new_data, new_nr_points = get_minimal_above_average_set(data, curvature_values)
         assert new_nr_points >= nr_points, "Need to sample more points from model net. Nr above average points too small."
-        return apply_subsample_transform(data, sampling_algs.fps_pure, nr_points, sampler_type="idx")
-
+        return apply_subsample_transform(new_data, sampling_algs.fps_pure, nr_points, sampler_type="idx")
+    else:
+        raise ValueError(f"{method}, not a valid method.")
 
 # ----Usage----
 # # Baseline:
